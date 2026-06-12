@@ -1,21 +1,16 @@
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'weather_model.dart';
 
 /// Service class to handle network operations for fetching weather data.
 /// 
-/// Integrates OpenWeatherMap APIs and handles web CORS issues dynamically.
+/// Integrates OpenWeatherMap APIs directly without any intermediate proxy routing.
 class WeatherService {
   // Default API Key set to empty string for security compliance (no hardcoded keys).
   static const String defaultApiKey = '';
 
   // Base API URL for OpenWeatherMap.
   static const String baseUrl = 'https://api.openweathermap.org/data/2.5/weather';
-
-  // Available CORS proxies for Web platform testing.
-  static const String allOriginsProxy = 'https://api.allorigins.win/raw?url=';
-  static const String corsAnywhereProxy = 'https://cors-anywhere.herokuapp.com/';
 
   final http.Client _client;
 
@@ -24,12 +19,9 @@ class WeatherService {
   /// Fetches weather data for a given [city].
   /// 
   /// Optionally accepts a [customApiKey]. If not provided, [defaultApiKey] is used.
-  /// If [useProxy] is true and we are on the web, requests will route through [proxyPrefix].
   Future<WeatherModel> fetchWeather(
     String city, {
     String? customApiKey,
-    bool useProxy = true,
-    String proxyPrefix = allOriginsProxy,
   }) async {
     final apiKey = (customApiKey != null && customApiKey.trim().isNotEmpty)
         ? customApiKey.trim()
@@ -44,29 +36,15 @@ class WeatherService {
       throw Exception('City name cannot be empty.');
     }
 
-    // 1. Build the direct OpenWeatherMap URL
+    // Build the direct OpenWeatherMap URL
     final String targetUrl = '$baseUrl?q=${Uri.encodeComponent(trimmedCity)}&appid=$apiKey&units=metric';
-
-    Uri requestUri;
-
-    // 2. Dynamic CORS handling for Web
-    if (kIsWeb && useProxy) {
-      if (proxyPrefix == allOriginsProxy) {
-        requestUri = Uri.parse('$proxyPrefix${Uri.encodeComponent(targetUrl)}');
-      } else {
-        requestUri = Uri.parse('$proxyPrefix$targetUrl');
-      }
-      debugPrint('Web build detected: Routing request through CORS proxy: $requestUri');
-    } else {
-      requestUri = Uri.parse(targetUrl);
-      debugPrint('Direct request routing: $requestUri');
-    }
+    final requestUri = Uri.parse(targetUrl);
 
     try {
       final response = await _client.get(requestUri).timeout(const Duration(seconds: 10));
       return _parseWeatherResponse(response, city: city);
     } catch (e) {
-      _handleNetworkError(e, useProxy);
+      _handleNetworkError(e);
       rethrow;
     }
   }
@@ -76,8 +54,6 @@ class WeatherService {
     double lat,
     double lon, {
     String? customApiKey,
-    bool useProxy = true,
-    String proxyPrefix = allOriginsProxy,
   }) async {
     final apiKey = (customApiKey != null && customApiKey.trim().isNotEmpty)
         ? customApiKey.trim()
@@ -87,29 +63,15 @@ class WeatherService {
       throw Exception('API Key is missing or invalid. Please configure your OpenWeatherMap API key.');
     }
 
-    // 1. Build direct URL
+    // Build direct URL
     final String targetUrl = '$baseUrl?lat=$lat&lon=$lon&appid=$apiKey&units=metric';
-
-    Uri requestUri;
-
-    // 2. Dynamic CORS handling for Web
-    if (kIsWeb && useProxy) {
-      if (proxyPrefix == allOriginsProxy) {
-        requestUri = Uri.parse('$proxyPrefix${Uri.encodeComponent(targetUrl)}');
-      } else {
-        requestUri = Uri.parse('$proxyPrefix$targetUrl');
-      }
-      debugPrint('Web build detected: Routing request through CORS proxy: $requestUri');
-    } else {
-      requestUri = Uri.parse(targetUrl);
-      debugPrint('Direct request routing: $requestUri');
-    }
+    final requestUri = Uri.parse(targetUrl);
 
     try {
       final response = await _client.get(requestUri).timeout(const Duration(seconds: 10));
       return _parseWeatherResponse(response);
     } catch (e) {
-      _handleNetworkError(e, useProxy);
+      _handleNetworkError(e);
       rethrow;
     }
   }
@@ -120,8 +82,6 @@ class WeatherService {
   Future<List<String>> fetchCitySuggestions(
     String query, {
     String? customApiKey,
-    bool useProxy = true,
-    String proxyPrefix = allOriginsProxy,
   }) async {
     final apiKey = (customApiKey != null && customApiKey.trim().isNotEmpty)
         ? customApiKey.trim()
@@ -136,21 +96,9 @@ class WeatherService {
       return [];
     }
 
-    // 1. Build target URL
+    // Build target URL for geocoding suggest
     final String targetUrl = 'https://api.openweathermap.org/geo/1.0/direct?q=${Uri.encodeComponent(trimmedQuery)}&limit=5&appid=$apiKey';
-
-    Uri requestUri;
-
-    // 2. Dynamic CORS proxy logic for Web geocoding
-    if (kIsWeb && useProxy) {
-      if (proxyPrefix == allOriginsProxy) {
-        requestUri = Uri.parse('$proxyPrefix${Uri.encodeComponent(targetUrl)}');
-      } else {
-        requestUri = Uri.parse('$proxyPrefix$targetUrl');
-      }
-    } else {
-      requestUri = Uri.parse(targetUrl);
-    }
+    final requestUri = Uri.parse(targetUrl);
 
     try {
       final response = await _client.get(requestUri).timeout(const Duration(seconds: 10));
@@ -159,15 +107,7 @@ class WeatherService {
         final decoded = jsonDecode(response.body);
         List<dynamic> listData = [];
 
-        // Support both direct list responses and wrapped proxy responses
-        if (decoded is Map<String, dynamic> && decoded.containsKey('contents')) {
-          final contents = decoded['contents'];
-          if (contents is String) {
-            listData = jsonDecode(contents) as List<dynamic>;
-          } else if (contents is List<dynamic>) {
-            listData = contents;
-          }
-        } else if (decoded is List<dynamic>) {
+        if (decoded is List<dynamic>) {
           listData = decoded;
         }
 
@@ -192,28 +132,17 @@ class WeatherService {
         return [];
       }
     } catch (e) {
-      debugPrint('Geocoding autocomplete suggestion error: $e');
       return [];
     }
   }
 
-  /// Unified response parser implementing resilient wrapping checks.
+  /// Unified response parser implementing direct decoding.
   WeatherModel _parseWeatherResponse(http.Response response, {String? city}) {
     if (response.statusCode == 200) {
       final decoded = jsonDecode(response.body);
       Map<String, dynamic> weatherJson;
 
-      // Extract nested contents if wrapped by a proxy server
-      if (decoded is Map<String, dynamic> && decoded.containsKey('contents')) {
-        final contents = decoded['contents'];
-        if (contents is String) {
-          weatherJson = jsonDecode(contents) as Map<String, dynamic>;
-        } else if (contents is Map<String, dynamic>) {
-          weatherJson = contents;
-        } else {
-          throw Exception('Invalid contents format in proxy response.');
-        }
-      } else if (decoded is Map<String, dynamic>) {
+      if (decoded is Map<String, dynamic>) {
         weatherJson = decoded;
       } else {
         throw Exception('Unexpected response format.');
@@ -233,14 +162,8 @@ class WeatherService {
   }
 
   /// Clean network error formatter helper.
-  void _handleNetworkError(dynamic error, bool useProxy) {
+  void _handleNetworkError(dynamic error) {
     if (error is http.ClientException) {
-      if (kIsWeb && useProxy) {
-        throw Exception(
-          'Network request blocked or proxy server offline.\n'
-          'Please verify internet access or toggle your web CORS proxy in developer settings.'
-        );
-      }
       throw Exception('Network error: Unable to reach the server. Please check your internet connection.');
     }
   }

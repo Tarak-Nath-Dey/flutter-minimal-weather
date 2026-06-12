@@ -1,5 +1,4 @@
 import 'dart:ui';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:geolocator/geolocator.dart';
@@ -47,8 +46,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
 
   // Local configuration settings (loaded/saved via SharedPreferences)
   String _customApiKey = WeatherService.defaultApiKey;
-  bool _useProxy = kIsWeb;
-  String _selectedProxy = WeatherService.allOriginsProxy;
   bool _showSettings = false;
 
   @override
@@ -89,8 +86,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
       final prefs = await SharedPreferences.getInstance();
       setState(() {
         _customApiKey = prefs.getString('api_key') ?? '';
-        _useProxy = kIsWeb ? (prefs.getBool('use_proxy') ?? true) : false;
-        _selectedProxy = prefs.getString('selected_proxy') ?? WeatherService.allOriginsProxy;
       });
     } catch (e) {
       debugPrint('SharedPreferences load error: $e');
@@ -102,8 +97,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('api_key', _customApiKey);
-      await prefs.setBool('use_proxy', _useProxy);
-      await prefs.setString('selected_proxy', _selectedProxy);
     } catch (e) {
       debugPrint('SharedPreferences save error: $e');
     }
@@ -161,8 +154,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
       final weather = await _weatherService.fetchWeather(
         trimmedCity,
         customApiKey: _customApiKey,
-        useProxy: _useProxy,
-        proxyPrefix: _selectedProxy,
       );
 
       setState(() {
@@ -189,8 +180,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
         lat,
         lon,
         customApiKey: _customApiKey,
-        useProxy: _useProxy,
-        proxyPrefix: _selectedProxy,
       );
 
       setState(() {
@@ -415,8 +404,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
           return await _weatherService.fetchCitySuggestions(
             query,
             customApiKey: _customApiKey,
-            useProxy: _useProxy,
-            proxyPrefix: _selectedProxy,
           );
         } catch (e) {
           debugPrint('Failed to query suggestions: $e');
@@ -817,83 +804,6 @@ class _WeatherHomeScreenState extends State<WeatherHomeScreen> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                if (kIsWeb) ...[
-                  // Proxy Enable Switch
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: const Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Web CORS Proxy',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                            ),
-                            Text(
-                              'Routes requests via proxy to prevent Web CORS blocks',
-                              style: TextStyle(fontSize: 11, color: Colors.white60),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Switch(
-                        value: _useProxy,
-                        activeThumbColor: Colors.tealAccent,
-                        onChanged: (val) {
-                          setState(() {
-                            _useProxy = val;
-                          });
-                        },
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Proxy Selector Dropdown
-                  if (_useProxy) ...[
-                    const Text(
-                      'Select Proxy Server',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.white70),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.white.withValues(alpha: 0.2)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          isExpanded: true,
-                          value: _selectedProxy,
-                          dropdownColor: Colors.grey[900],
-                          items: const [
-                            DropdownMenuItem(
-                              value: WeatherService.allOriginsProxy,
-                              child: Text('AllOrigins (Raw API - Recommended)'),
-                            ),
-                            DropdownMenuItem(
-                              value: WeatherService.corsAnywhereProxy,
-                              child: Text('CORS Anywhere (Requires /corsdemo)'),
-                            ),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _selectedProxy = val;
-                              });
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
                 const SizedBox(height: 32),
 
                 // Action buttons
